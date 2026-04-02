@@ -1294,3 +1294,17 @@ pub async fn smart_update_by_filename(
     log::info!("Filename-based smart update completed, updated {} movies", updated_results.len());
     Ok(updated_results)
 }
+
+#[tauri::command]
+pub fn get_poster_image(poster_path: String) -> Result<Vec<u8>, String> {
+    if poster_path.is_empty() {
+        return Err("Poster path is empty".to_string());
+    }
+
+    let path = Path::new(&poster_path);
+    if !path.exists() {
+        return Err(format!("Poster file not found: {}", poster_path));
+    }
+
+    fs::read(path).map_err(|e| format!("Failed to read poster: {}", e))
+}

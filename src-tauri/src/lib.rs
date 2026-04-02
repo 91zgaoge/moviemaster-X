@@ -64,6 +64,7 @@ pub fn run() {
             commands::movie::search_douban,
             commands::movie::fetch_douban_info,
             commands::movie::download_poster,
+            commands::movie::get_poster_image,
             commands::movie::generate_nfo,
             // TMDB commands
             commands::movie::search_tmdb,
