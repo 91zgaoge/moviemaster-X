@@ -41,6 +41,7 @@ import { DuplicateManager } from "@/components/DuplicateManager"
 import { PTDepilerSettings } from "@/components/PTDepilerSettings"
 import { QBittorrentSettings } from "@/components/QBittorrentSettings"
 import { AIAssistant, AIAssistantButton } from "@/components/AIAssistant"
+import { ThemeSwitcher } from "@/components/ThemeSwitcher"
 import { LLMSettings } from "@/components/LLMSettings"
 import type { Movie } from "@/lib/api"
 
@@ -396,6 +397,9 @@ export default function Dashboard() {
           >
             <RefreshCw style={{ width: "16px", height: "16px" }} />
           </Button>
+
+          {/* 主题切换器 */}
+          <ThemeSwitcher />
         </header>
 
         {/* Content */}
@@ -1138,22 +1142,23 @@ function FilterButton({
   )
 }
 
-function MovieCard({ 
-  movie, 
+function MovieCard({
+  movie,
   isSelected,
   isBatchMode,
   onToggleSelect,
   onClick,
-  onSearchTMDB 
-}: { 
+  onSearchTMDB
+}: {
   movie: any
   isSelected?: boolean
   isBatchMode?: boolean
   onToggleSelect?: () => void
   onClick?: () => void
-  onSearchTMDB: () => void 
+  onSearchTMDB: () => void
 }) {
   const [showActions, setShowActions] = useState(false)
+
 
   return (
     <div 

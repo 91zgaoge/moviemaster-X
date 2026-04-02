@@ -1,32 +1,138 @@
 @import "tailwindcss";
 
-/* Tailwind CSS v4 Theme Configuration */
-@theme {
-  /* 颜色系统 */
-  --color-background: hsl(0 0% 100%);
-  --color-foreground: hsl(222.2 84% 4.9%);
-  
+/* ============================================
+   春夏秋冬撞色主题系统 - Four Seasons Theme System
+   ============================================ */
+
+/* 春 Spring - 粉绿撞色: 樱花粉 + 新芽绿 */
+html[data-theme="spring"] {
+  --color-background: hsl(320 30% 98%);
+  --color-foreground: hsl(320 30% 15%);
   --color-card: hsl(0 0% 100%);
-  --color-card-foreground: hsl(222.2 84% 4.9%);
-  
-  --color-primary: hsl(221.2 83.2% 53.3%);
-  --color-primary-foreground: hsl(210 40% 98%);
-  
-  --color-secondary: hsl(210 40% 96.1%);
-  --color-secondary-foreground: hsl(222.2 47.4% 11.2%);
-  
-  --color-muted: hsl(210 40% 96.1%);
-  --color-muted-foreground: hsl(215.4 16.3% 46.9%);
-  
-  --color-accent: hsl(210 40% 96.1%);
-  --color-accent-foreground: hsl(222.2 47.4% 11.2%);
-  
+  --color-card-foreground: hsl(320 30% 15%);
+  --color-primary: hsl(340 80% 65%);
+  --color-primary-foreground: hsl(0 0% 100%);
+  --color-secondary: hsl(140 60% 90%);
+  --color-secondary-foreground: hsl(140 60% 25%);
+  --color-accent: hsl(140 70% 75%);
+  --color-accent-foreground: hsl(320 30% 15%);
+  --color-muted: hsl(320 20% 94%);
+  --color-muted-foreground: hsl(320 10% 45%);
   --color-destructive: hsl(0 84.2% 60.2%);
   --color-destructive-foreground: hsl(210 40% 98%);
-  
-  --color-border: hsl(214.3 31.8% 91.4%);
-  --color-input: hsl(214.3 31.8% 91.4%);
-  --color-ring: hsl(221.2 83.2% 53.3%);
+  --color-border: hsl(340 30% 88%);
+  --color-input: hsl(340 30% 88%);
+  --color-ring: hsl(340 80% 65%);
+  /* 撞色强调 */
+  --color-clash-primary: hsl(340 80% 65%);
+  --color-clash-secondary: hsl(140 70% 55%);
+  --color-clash-gradient: linear-gradient(135deg, hsl(340 80% 75%) 0%, hsl(140 70% 70%) 100%);
+  --color-glow: hsl(340 80% 65% / 0.3);
+}
+
+/* 夏 Summer - 蓝橙撞色: 海洋蓝 + 阳光橙 */
+html[data-theme="summer"] {
+  --color-background: hsl(200 50% 97%);
+  --color-foreground: hsl(200 50% 15%);
+  --color-card: hsl(0 0% 100%);
+  --color-card-foreground: hsl(200 50% 15%);
+  --color-primary: hsl(195 100% 50%);
+  --color-primary-foreground: hsl(0 0% 100%);
+  --color-secondary: hsl(35 100% 94%);
+  --color-secondary-foreground: hsl(35 80% 30%);
+  --color-accent: hsl(35 100% 60%);
+  --color-accent-foreground: hsl(0 0% 100%);
+  --color-muted: hsl(200 30% 92%);
+  --color-muted-foreground: hsl(200 20% 45%);
+  --color-destructive: hsl(0 84.2% 60.2%);
+  --color-destructive-foreground: hsl(210 40% 98%);
+  --color-border: hsl(195 50% 85%);
+  --color-input: hsl(195 50% 85%);
+  --color-ring: hsl(195 100% 50%);
+  /* 撞色强调 */
+  --color-clash-primary: hsl(195 100% 50%);
+  --color-clash-secondary: hsl(35 100% 55%);
+  --color-clash-gradient: linear-gradient(135deg, hsl(195 100% 60%) 0%, hsl(35 100% 60%) 100%);
+  --color-glow: hsl(195 100% 50% / 0.3);
+}
+
+/* 秋 Autumn - 红黄撞色: 枫叶红 + 银杏黄 */
+html[data-theme="autumn"] {
+  --color-background: hsl(30 30% 96%);
+  --color-foreground: hsl(30 40% 12%);
+  --color-card: hsl(30 20% 99%);
+  --color-card-foreground: hsl(30 40% 12%);
+  --color-primary: hsl(15 100% 55%);
+  --color-primary-foreground: hsl(0 0% 100%);
+  --color-secondary: hsl(50 90% 90%);
+  --color-secondary-foreground: hsl(50 70% 25%);
+  --color-accent: hsl(50 100% 55%);
+  --color-accent-foreground: hsl(30 40% 12%);
+  --color-muted: hsl(30 20% 90%);
+  --color-muted-foreground: hsl(30 15% 45%);
+  --color-destructive: hsl(0 70% 50%);
+  --color-destructive-foreground: hsl(0 0% 100%);
+  --color-border: hsl(25 40% 82%);
+  --color-input: hsl(25 40% 82%);
+  --color-ring: hsl(15 100% 55%);
+  /* 撞色强调 */
+  --color-clash-primary: hsl(15 100% 55%);
+  --color-clash-secondary: hsl(50 100% 50%);
+  --color-clash-gradient: linear-gradient(135deg, hsl(15 100% 65%) 0%, hsl(50 100% 55%) 100%);
+  --color-glow: hsl(15 100% 55% / 0.3);
+}
+
+/* 冬 Winter - 紫白撞色: 冰紫 + 雪白 + 银灰点缀 */
+html[data-theme="winter"] {
+  --color-background: hsl(220 20% 97%);
+  --color-foreground: hsl(220 30% 15%);
+  --color-card: hsl(0 0% 100%);
+  --color-card-foreground: hsl(220 30% 15%);
+  --color-primary: hsl(260 60% 55%);
+  --color-primary-foreground: hsl(0 0% 100%);
+  --color-secondary: hsl(220 20% 92%);
+  --color-secondary-foreground: hsl(220 40% 30%);
+  --color-accent: hsl(160 60% 45%);
+  --color-accent-foreground: hsl(0 0% 100%);
+  --color-muted: hsl(220 15% 94%);
+  --color-muted-foreground: hsl(220 10% 45%);
+  --color-destructive: hsl(0 60% 55%);
+  --color-destructive-foreground: hsl(0 0% 100%);
+  --color-border: hsl(260 20% 88%);
+  --color-input: hsl(260 20% 88%);
+  --color-ring: hsl(260 60% 55%);
+  /* 撞色强调 */
+  --color-clash-primary: hsl(260 70% 60%);
+  --color-clash-secondary: hsl(160 70% 50%);
+  --color-clash-gradient: linear-gradient(135deg, hsl(260 80% 75%) 0%, hsl(160 80% 60%) 100%);
+  --color-glow: hsl(260 70% 60% / 0.25);
+}
+
+/* 默认主题 (春) - 使用 html 选择器确保优先级 */
+html {
+  /* 颜色系统 */
+  --color-background: hsl(320 30% 98%);
+  --color-foreground: hsl(320 30% 15%);
+  --color-card: hsl(0 0% 100%);
+  --color-card-foreground: hsl(320 30% 15%);
+  --color-primary: hsl(340 80% 65%);
+  --color-primary-foreground: hsl(0 0% 100%);
+  --color-secondary: hsl(140 60% 90%);
+  --color-secondary-foreground: hsl(140 60% 25%);
+  --color-muted: hsl(320 20% 94%);
+  --color-muted-foreground: hsl(320 10% 45%);
+  --color-accent: hsl(140 70% 75%);
+  --color-accent-foreground: hsl(320 30% 15%);
+  --color-destructive: hsl(0 84.2% 60.2%);
+  --color-destructive-foreground: hsl(210 40% 98%);
+  --color-border: hsl(340 30% 88%);
+  --color-input: hsl(340 30% 88%);
+  --color-ring: hsl(340 80% 65%);
+  /* 撞色强调 */
+  --color-clash-primary: hsl(340 80% 65%);
+  --color-clash-secondary: hsl(140 70% 55%);
+  --color-clash-gradient: linear-gradient(135deg, hsl(340 80% 75%) 0%, hsl(140 70% 70%) 100%);
+  --color-glow: hsl(340 80% 65% / 0.3);
   
   /* 间距 */
   --spacing: 0.25rem;
@@ -43,11 +149,22 @@
   
   /* 字体 */
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  /* 撞色变量 */
+  --color-clash-primary: hsl(340 80% 65%);
+  --color-clash-secondary: hsl(140 70% 55%);
+  --color-clash-gradient: linear-gradient(135deg, hsl(340 80% 75%) 0%, hsl(140 70% 70%) 100%);
+  --color-glow: hsl(340 80% 65% / 0.3);
 }
 
 /* 基础样式 */
 * {
   border-color: var(--color-border);
+}
+
+/* 确保图片不受主题切换影响 */
+img {
+  border-color: transparent;
 }
 
 html {
@@ -242,4 +359,113 @@ body {
 :focus-visible {
   outline: 2px solid var(--color-ring);
   outline-offset: 2px;
+}
+
+/* ============================================
+   撞色主题工具类 - Clash Color Utilities
+   ============================================ */
+
+/* 撞色背景 */
+@utility bg-clash-primary {
+  background-color: var(--color-clash-primary);
+}
+
+@utility bg-clash-secondary {
+  background-color: var(--color-clash-secondary);
+}
+
+/* 撞色文字 */
+@utility text-clash-primary {
+  color: var(--color-clash-primary);
+}
+
+@utility text-clash-secondary {
+  color: var(--color-clash-secondary);
+}
+
+/* 撞色渐变背景 */
+@utility bg-clash-gradient {
+  background: var(--color-clash-gradient);
+}
+
+/* 撞色边框 */
+@utility border-clash-primary {
+  border-color: var(--color-clash-primary);
+}
+
+@utility border-clash-secondary {
+  border-color: var(--color-clash-secondary);
+}
+
+/* 撞色发光效果 */
+@utility shadow-clash {
+  box-shadow: 0 0 20px var(--color-glow), 0 0 40px var(--color-glow);
+}
+
+@utility shadow-clash-sm {
+  box-shadow: 0 0 10px var(--color-glow);
+}
+
+/* 撞色按钮样式 */
+@utility btn-clash {
+  background: var(--color-clash-gradient);
+  color: white;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+@utility btn-clash:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px var(--color-glow);
+}
+
+/* 季节装饰 */
+@utility seasonal-glow {
+  position: relative;
+}
+
+@utility seasonal-glow::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  background: var(--color-clash-gradient);
+  border-radius: inherit;
+  z-index: -1;
+  opacity: 0.5;
+  filter: blur(8px);
+}
+
+/* 主题切换动画 */
+@utility theme-transition {
+  transition: background-color 0.5s ease, color 0.5s ease, border-color 0.5s ease;
+}
+
+/* 春季装饰 - 花瓣飘落效果 */
+html[data-theme="spring"] .seasonal-decoration {
+  background-image: radial-gradient(circle at 20% 80%, hsl(340 80% 85% / 0.3) 0%, transparent 50%),
+                    radial-gradient(circle at 80% 20%, hsl(140 70% 80% / 0.3) 0%, transparent 50%);
+}
+
+/* 夏季装饰 - 阳光射线效果 */
+html[data-theme="summer"] .seasonal-decoration {
+  background-image: radial-gradient(circle at 50% 50%, hsl(195 100% 70% / 0.2) 0%, transparent 70%),
+                    linear-gradient(135deg, hsl(35 100% 70% / 0.1) 0%, transparent 50%);
+}
+
+/* 秋季装饰 - 落叶效果 */
+html[data-theme="autumn"] .seasonal-decoration {
+  background-image: radial-gradient(ellipse at 30% 70%, hsl(15 100% 70% / 0.2) 0%, transparent 50%),
+                    radial-gradient(ellipse at 70% 30%, hsl(50 100% 60% / 0.2) 0%, transparent 50%);
+}
+
+/* 冬季装饰 - 雪花/冰霜效果 */
+html[data-theme="winter"] .seasonal-decoration {
+  background-image: radial-gradient(circle at 25% 25%, hsl(195 80% 90% / 0.5) 0%, transparent 30%),
+                    radial-gradient(circle at 75% 75%, hsl(180 70% 85% / 0.3) 0%, transparent 40%);
+}
+
+/* 选中文本样式（跟随主题） */
+::selection {
+  background: var(--color-primary);
+  color: var(--color-primary-foreground);
 }
