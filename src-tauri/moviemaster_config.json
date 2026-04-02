@@ -1,0 +1,18 @@
+{
+  "version": "1.0",
+  "export_time": "2026-03-30T20:14:11.910534+08:00",
+  "settings": [
+    {
+      "key": "tmdb_api_key",
+      "value": "3a82991e4c7ab8cbc6c355256ef8f226"
+    }
+  ],
+  "directories": [
+    {
+      "path": "\\\\NAS\\movie-e",
+      "name": "电影",
+      "path_type": "local",
+      "enabled": true
+    }
+  ]
+}

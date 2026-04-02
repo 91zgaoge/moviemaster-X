@@ -1,0 +1,245 @@
+@import "tailwindcss";
+
+/* Tailwind CSS v4 Theme Configuration */
+@theme {
+  /* 颜色系统 */
+  --color-background: hsl(0 0% 100%);
+  --color-foreground: hsl(222.2 84% 4.9%);
+  
+  --color-card: hsl(0 0% 100%);
+  --color-card-foreground: hsl(222.2 84% 4.9%);
+  
+  --color-primary: hsl(221.2 83.2% 53.3%);
+  --color-primary-foreground: hsl(210 40% 98%);
+  
+  --color-secondary: hsl(210 40% 96.1%);
+  --color-secondary-foreground: hsl(222.2 47.4% 11.2%);
+  
+  --color-muted: hsl(210 40% 96.1%);
+  --color-muted-foreground: hsl(215.4 16.3% 46.9%);
+  
+  --color-accent: hsl(210 40% 96.1%);
+  --color-accent-foreground: hsl(222.2 47.4% 11.2%);
+  
+  --color-destructive: hsl(0 84.2% 60.2%);
+  --color-destructive-foreground: hsl(210 40% 98%);
+  
+  --color-border: hsl(214.3 31.8% 91.4%);
+  --color-input: hsl(214.3 31.8% 91.4%);
+  --color-ring: hsl(221.2 83.2% 53.3%);
+  
+  /* 间距 */
+  --spacing: 0.25rem;
+  
+  /* 圆角 */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  
+  /* 阴影 */
+  --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --shadow-card-hover: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  
+  /* 字体 */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+/* 基础样式 */
+* {
+  border-color: var(--color-border);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  margin: 0;
+  min-height: 100vh;
+}
+
+/* 自定义工具类 */
+@utility bg-background {
+  background-color: var(--color-background);
+}
+
+@utility bg-foreground {
+  background-color: var(--color-foreground);
+}
+
+@utility bg-card {
+  background-color: var(--color-card);
+}
+
+@utility bg-primary {
+  background-color: var(--color-primary);
+}
+
+@utility bg-primary-foreground {
+  background-color: var(--color-primary-foreground);
+}
+
+@utility bg-secondary {
+  background-color: var(--color-secondary);
+}
+
+@utility bg-muted {
+  background-color: var(--color-muted);
+}
+
+@utility bg-accent {
+  background-color: var(--color-accent);
+}
+
+@utility bg-destructive {
+  background-color: var(--color-destructive);
+}
+
+@utility text-background {
+  color: var(--color-background);
+}
+
+@utility text-foreground {
+  color: var(--color-foreground);
+}
+
+@utility text-primary {
+  color: var(--color-primary);
+}
+
+@utility text-primary-foreground {
+  color: var(--color-primary-foreground);
+}
+
+@utility text-secondary {
+  color: var(--color-secondary);
+}
+
+@utility text-secondary-foreground {
+  color: var(--color-secondary-foreground);
+}
+
+@utility text-muted {
+  color: var(--color-muted);
+}
+
+@utility text-muted-foreground {
+  color: var(--color-muted-foreground);
+}
+
+@utility text-accent {
+  color: var(--color-accent);
+}
+
+@utility text-accent-foreground {
+  color: var(--color-accent-foreground);
+}
+
+@utility text-destructive {
+  color: var(--color-destructive);
+}
+
+@utility text-destructive-foreground {
+  color: var(--color-destructive-foreground);
+}
+
+@utility text-card-foreground {
+  color: var(--color-card-foreground);
+}
+
+@utility border-border {
+  border-color: var(--color-border);
+}
+
+@utility border-input {
+  border-color: var(--color-input);
+}
+
+@utility ring-ring {
+  --tw-ring-color: var(--color-ring);
+}
+
+@utility gradient-primary {
+  background: linear-gradient(135deg, var(--color-primary) 0%, hsl(250 80% 60%) 100%);
+}
+
+@utility shadow-card {
+  box-shadow: var(--shadow-card);
+}
+
+@utility shadow-card-hover {
+  box-shadow: var(--shadow-card-hover);
+}
+
+@utility scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(215.4 16.3% 46.9% / 0.3) transparent;
+}
+
+@utility scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+@utility scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@utility scrollbar-thin::-webkit-scrollbar-thumb {
+  background-color: hsl(215.4 16.3% 46.9% / 0.3);
+  border-radius: 3px;
+}
+
+@utility glass {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+@utility line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+@utility transition-smooth {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-muted);
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(215.4 16.3% 46.9% / 0.3);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(215.4 16.3% 46.9% / 0.5);
+}
+
+/* 选中样式 */
+::selection {
+  background: hsl(221.2 83.2% 53.3% / 0.2);
+  color: hsl(221.2 83.2% 53.3%);
+}
+
+/* 聚焦样式 */
+:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 2px;
+}

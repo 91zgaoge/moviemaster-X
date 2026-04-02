@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo test:*)",
+      "Bash(npm run build)",
+      "Bash(npm run tauri dev:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(taskkill /F /PID:*)",
+      "Bash(taskkill:*)",
+      "Bash(powershell:*)",
+      "Bash(npm run tauri build:*)",
+      "Bash(cargo check:*)",
+      "Bash(cargo build:*)",
+      "Bash(: '查看当前目录结构')",
+      "Bash(: '查看src目录结构')",
+      "Bash(: 16000)",
+      "Bash(: '列出Rust后端文件')",
+      "Bash(: '检查.claude目录')",
+      "Bash(: '重新安装 claude-hud 插件')",
+      "Bash(/plugin uninstall claude-hud)",
+      "Bash(/plugin install claude-hud)",
+      "WebFetch(domain:github.com)",
+      "WebSearch",
+      "Bash(gh repo view jarrodwatts/claude-hud --json name,description,url,defaultBranch)",
+      "Bash(gh repo clone jarrodwatts/claude-hud -- --dry-run)",
+      "Bash(curl -s https://raw.githubusercontent.com/jarrodwatts/claude-hud/main/README.md)",
+      "Bash(git clone --depth 1 https://github.com/jarrodwatts/claude-hud.git claude-hud2)",
+      "Bash(echo \"无 claude-hud 缓存\" echo \"\" echo \"注册表:\" grep -i \"claude-hud\" \"$CLAUDE_DIR/plugins/installed_plugins.json\")",
+      "Bash(echo:*)",
+      "Bash(bash:*)",
+      "Skill(claude-hud:setup)"
+    ]
+  }
+}
