@@ -14,9 +14,16 @@ interface MovieState {
   tmdbSearchResults: api.TMDBSearchResult[]
   tmdbLoading: boolean
   groupBySeries: boolean
+  // Scan status
+  scanningDirectories: Set<number>
+  scanProgress: Record<number, api.ScanProgress>
+  lastScanResults: Record<number, { totalFound: number; timestamp: number }>
 
   fetchMovies: () => Promise<void>
   scanDirectory: (directoryId: number) => Promise<number>
+  startBackgroundScan: (directoryId: number) => Promise<void>
+  fetchScanStatus: (directoryId: number) => Promise<void>
+  isDirectoryScanning: (directoryId: number) => boolean
   setSelectedDirectory: (id: number | null) => void
   setSearchQuery: (query: string) => void
   setVideoType: (type: string | null) => void
@@ -42,6 +49,9 @@ export const useMovieStore = create<MovieState>((set, get) => ({
   tmdbSearchResults: [],
   tmdbLoading: false,
   groupBySeries: true,
+  scanningDirectories: new Set(),
+  scanProgress: {},
+  lastScanResults: {},
 
   fetchMovies: async () => {
     set({ loading: true, error: null })
@@ -53,7 +63,11 @@ export const useMovieStore = create<MovieState>((set, get) => ({
         search: searchQuery || undefined,
       })
       // Remove duplicates by path and hash
+      console.log("[MovieStore] Fetched movies count:", movies.length);
+      console.log("[MovieStore] Before dedupe:", movies.length);
+      // Remove duplicates by movie identity
       movies = removeDuplicateMovies(movies)
+      console.log("[MovieStore] After dedupe:", movies.length);
       // Group TV series
       const { series, individualMovies } = groupMoviesBySeries(movies)
       set({ movies, groupedSeries: series, individualMovies, loading: false })
@@ -61,7 +75,7 @@ export const useMovieStore = create<MovieState>((set, get) => ({
       set({ error: String(error), loading: false })
     }
   },
-  
+
   scanDirectory: async (directoryId: number) => {
     set({ loading: true, error: null })
     try {
@@ -73,6 +87,97 @@ export const useMovieStore = create<MovieState>((set, get) => ({
       set({ error: String(error), loading: false })
       throw error
     }
+  },
+
+  startBackgroundScan: async (directoryId: number) => {
+    console.log("[MovieStore] startBackgroundScan called with:", directoryId)
+    try {
+      await api.startScan(directoryId)
+      const scanningDirs = new Set(get().scanningDirectories)
+      scanningDirs.add(directoryId)
+      set({ scanningDirectories: scanningDirs })
+
+      // Start polling scan status
+      const pollInterval = setInterval(async () => {
+        try {
+          const status = await api.getScanStatus(directoryId)
+          const state = get()
+
+          if (status.status === "scanning") {
+            set({
+              scanProgress: {
+                ...state.scanProgress,
+                [directoryId]: status
+              }
+            })
+          } else if (status.status === "completed") {
+            clearInterval(pollInterval)
+            const scanningDirs = new Set(state.scanningDirectories)
+            scanningDirs.delete(directoryId)
+            set({
+              scanningDirectories: scanningDirs,
+              lastScanResults: {
+                ...state.lastScanResults,
+                [directoryId]: {
+                  totalFound: status.total_found || 0,
+                  timestamp: Date.now()
+                }
+              }
+            })
+            // Refresh movies after scan completes
+            await get().fetchMovies()
+            // Clear status after 5 seconds
+            setTimeout(() => {
+              api.clearScanStatus(directoryId)
+            }, 5000)
+          } else if (status.status === "error") {
+            clearInterval(pollInterval)
+            const scanningDirs = new Set(state.scanningDirectories)
+            scanningDirs.delete(directoryId)
+            set({
+              scanningDirectories: scanningDirs,
+              error: `扫描失败: ${status.message}`
+            })
+          }
+        } catch (e) {
+          console.error("Failed to fetch scan status:", e)
+        }
+      }, 500) // Poll every 500ms
+
+      // Stop polling after 5 minutes (timeout)
+      setTimeout(() => {
+        clearInterval(pollInterval)
+        const scanningDirs = new Set(get().scanningDirectories)
+        if (scanningDirs.has(directoryId)) {
+          scanningDirs.delete(directoryId)
+          set({ scanningDirectories: scanningDirs })
+        }
+      }, 5 * 60 * 1000)
+
+    } catch (error) {
+      set({ error: String(error) })
+      throw error
+    }
+  },
+
+  fetchScanStatus: async (directoryId: number) => {
+    try {
+      const status = await api.getScanStatus(directoryId)
+      if (status.status === "scanning") {
+        set({
+          scanProgress: {
+            ...get().scanProgress,
+            [directoryId]: status
+          }
+        })
+      }
+    } catch (error) {
+      console.error("Failed to fetch scan status:", error)
+    }
+  },
+
+  isDirectoryScanning: (directoryId: number) => {
+    return get().scanningDirectories.has(directoryId)
   },
   
   setSelectedDirectory: (id) => {

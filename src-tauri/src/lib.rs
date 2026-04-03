@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use tauri::Manager;
 
 mod agent;
@@ -8,6 +9,7 @@ mod scanner;
 mod services;
 
 pub use db::Database;
+use services::scan_manager::ScanManager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -34,6 +36,11 @@ pub fn run() {
             let database = Database::new(&db_path).expect("Failed to initialize database");
             app.manage(database);
 
+            // Initialize Scan Manager for background scanning
+            log::info!("Initializing Scan Manager...");
+            let scan_manager = Arc::new(ScanManager::new());
+            app.manage(scan_manager);
+
             // Initialize AI Agent state
             log::info!("Initializing AI Agent...");
             let agent_state = commands::agent::AgentState::new();
@@ -59,6 +66,10 @@ pub fn run() {
             // Movie commands
             commands::movie::get_movies,
             commands::movie::scan_directory,
+            commands::movie::start_scan,
+            commands::movie::get_scan_status,
+            commands::movie::get_global_scan_status,
+            commands::movie::clear_scan_status,
             commands::movie::get_movie_by_id,
             commands::movie::update_movie_info,
             commands::movie::search_douban,
@@ -75,6 +86,12 @@ pub fn run() {
             commands::movie::smart_update_by_filename,
             commands::movie::open_movie_file,
             commands::movie::delete_movie,
+            // VNFO commands
+            commands::movie::read_movie_vnfo,
+            commands::movie::save_movie_vnfo,
+            commands::movie::has_vnfo,
+            // Stats commands
+            commands::movie::get_movie_stats,
             // Duplicate commands
             commands::duplicate::scan_duplicates,
             commands::duplicate::delete_duplicates,

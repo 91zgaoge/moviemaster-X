@@ -6,6 +6,8 @@ pub mod nfo;
 pub mod smb_client;
 pub mod subtitle;
 pub mod import_export;
+pub mod scan_manager;
+pub mod vnfo;
 
 pub mod douban {
     use serde::{Deserialize, Serialize};

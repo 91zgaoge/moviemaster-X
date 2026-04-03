@@ -86,27 +86,39 @@ function extractSeriesTitle(filename: string): string {
     .trim();
 }
 
-// Remove duplicate movies by file hash or path
+// Remove duplicate movies by movie identity (cnname + year + season + episode)
+// Same movie/show appears only once in library, but multiple file versions are tracked
 export function removeDuplicateMovies(movies: Movie[]): Movie[] {
-  const seenPaths = new Set<string>();
-  const seenHashes = new Set<string>();
+  const seenMovies = new Set<string>();
   const uniqueMovies: Movie[] = [];
 
   for (const movie of movies) {
-    // Skip if path already seen
-    if (seenPaths.has(movie.path)) {
+    // Create unique key based on movie identity
+    // Movies: cnname + year
+    // TV Episodes: cnname + year + season + episode
+    const title = movie.cnname || movie.filename;
+    const year = movie.year || 'unknown';
+    const season = movie.season || '';
+    const episode = movie.episode || '';
+
+    // For TV episodes, include season/episode in key
+    // For movies, just use title + year
+    let key: string;
+    if (movie.video_type === 'tv' || (season && episode)) {
+      key = `${title}_${year}_S${season}E${episode}`;
+    } else {
+      key = `${title}_${year}`;
+    }
+
+    // Normalize key for comparison
+    key = key.toLowerCase().trim();
+
+    // Skip if this movie/show already seen
+    if (seenMovies.has(key)) {
       continue;
     }
 
-    // Skip if hash exists and already seen
-    if (movie.file_hash && seenHashes.has(movie.file_hash)) {
-      continue;
-    }
-
-    seenPaths.add(movie.path);
-    if (movie.file_hash) {
-      seenHashes.add(movie.file_hash);
-    }
+    seenMovies.add(key);
     uniqueMovies.push(movie);
   }
 

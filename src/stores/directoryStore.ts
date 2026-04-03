@@ -31,7 +31,10 @@ export const useDirectoryStore = create<DirectoryState>((set, get) => ({
     set({ loading: true, error: null })
     try {
       await api.addDirectory({ path, name })
-      await get().fetchDirectories()
+      // 立即重置 loading，让 UI 响应
+      set({ loading: false })
+      // 后台刷新目录列表
+      get().fetchDirectories().catch(console.error)
     } catch (error) {
       set({ error: String(error), loading: false })
       throw error

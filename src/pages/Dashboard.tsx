@@ -28,10 +28,8 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog"
 import { useDirectoryStore } from "@/stores/directoryStore"
 import { useMovieStore } from "@/stores/movieStore"
@@ -56,13 +54,15 @@ import {
 
 export default function Dashboard() {
   const { directories, fetchDirectories, addDirectory, removeDirectory, toggleDirectory } = useDirectoryStore()
-  const { 
-    movies, 
-    fetchMovies, 
-    scanDirectory, 
-    loading, 
-    searchQuery, 
-    setSearchQuery, 
+  const {
+    movies,
+    fetchMovies,
+    startBackgroundScan,
+    scanningDirectories,
+    scanProgress,
+    loading,
+    searchQuery,
+    setSearchQuery,
     setVideoType,
     searchTMDB,
     fetchTMDBDetail,
@@ -113,29 +113,63 @@ export default function Dashboard() {
     fetchMovies()
   }, [])
 
+  // 使用 movies 数据计算统计信息
+  const stats = {
+    total: movies.length,
+    movies: movies.filter((m) => m.video_type === "movie").length,
+    tv: movies.filter((m) => m.video_type === "tv").length,
+  }
+
   const handleAddDirectory = async () => {
-    if (!newPath) return
+    const pathToUse = newPath.trim()
+
+    // 调试日志
+    console.log(`State中的值: [${newPath}] 处理后的值: [${pathToUse}] 长度: ${pathToUse.length}`)
+
+    // 检查是否为空
+    if (!pathToUse || pathToUse.length === 0) {
+      showToast("请输入目录路径", "error")
+      return
+    }
+
+    // 立即关闭对话框，提升用户体验
+    setIsAddDialogOpen(false)
     try {
-      await addDirectory(newPath, newName || undefined)
+      await addDirectory(pathToUse, newName.trim() || undefined)
       setNewPath("")
       setNewName("")
-      setIsAddDialogOpen(false)
+      showToast("目录添加成功", "success")
     } catch (error) {
       console.error("Failed to add directory:", error)
+      showToast(`添加目录失败: ${error}`, "error")
+      setIsAddDialogOpen(true)
     }
   }
 
   const handleScan = async (dirId: number) => {
+    console.log("[Dashboard] Scan button clicked for directory:", dirId, "type:", typeof dirId)
     console.log("Scan button clicked for directory:", dirId)
     try {
-      const count = await scanDirectory(dirId)
-      console.log("Scan completed, found", count, "movies")
-      alert(`扫描完成，新增 ${count} 个影片`)
+      // 使用后台扫描
+      await startBackgroundScan(dirId)
+      showToast("扫描已启动，将在后台进行", "info")
     } catch (error) {
-      console.error("Scan failed:", error)
-      alert("扫描失败: " + error)
+      console.error("[Dashboard] Scan failed:", error)
+      console.error("[Dashboard] Error details:", error?.message, error?.stack)
+      showToast("扫描启动失败: " + error, "error")
     }
   }
+
+  // Auto-refresh movies every 2 seconds when on movies tab
+  useEffect(() => {
+    if (activeTab !== "movies") return
+
+    const interval = setInterval(() => {
+      fetchMovies()
+    }, 2000)
+
+    return () => clearInterval(interval)
+  }, [activeTab, fetchMovies])
 
   const handleFilterChange = (type: "all" | "movie" | "tv") => {
     setVideoFilter(type)
@@ -173,11 +207,7 @@ export default function Dashboard() {
       }
     })
 
-  const stats = {
-    total: movies.length,
-    movies: movies.filter((m) => m.video_type === "movie").length,
-    tv: movies.filter((m) => m.video_type === "tv").length,
-  }
+  // 统计信息已从上面移动到此处
 
   return (
     <div style={{ display: "flex", height: "100vh", backgroundColor: "var(--color-background)" }}>
@@ -242,6 +272,14 @@ export default function Dashboard() {
           to {
             transform: translateX(0);
             opacity: 1;
+          }
+        }
+        @keyframes spin {
+          from {
+            transform: rotate(0deg);
+          }
+          to {
+            transform: rotate(360deg);
           }
         }
       `}</style>
@@ -402,9 +440,13 @@ export default function Dashboard() {
             variant="outline"
             size="icon"
             onClick={() => fetchMovies()}
-            style={loading ? { animation: "spin 1s linear infinite" } : {}}
+            disabled={loading}
           >
-            <RefreshCw style={{ width: "16px", height: "16px" }} />
+            <RefreshCw style={{
+              width: "16px",
+              height: "16px",
+              animation: loading ? "spin 1s linear infinite" : "none"
+            }} />
           </Button>
 
           {/* 主题切换器 */}
@@ -592,34 +634,65 @@ export default function Dashboard() {
                   <h2 style={{ fontSize: "24px", fontWeight: "bold", color: "var(--color-foreground)" }}>影视目录</h2>
                   <p style={{ fontSize: "14px", color: "var(--color-muted-foreground)", marginTop: "4px" }}>管理您的影视文件夹</p>
                 </div>
-                <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-                  <DialogTrigger asChild>
-                    <Button style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      <Plus style={{ width: "16px", height: "16px" }} />
-                      添加目录
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent style={{ maxWidth: "450px" }}>
-                    <DialogHeader>
-                      <DialogTitle>添加影视目录</DialogTitle>
-                      <DialogDescription>添加包含视频文件的目录路径</DialogDescription>
-                    </DialogHeader>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "16px", padding: "16px 0" }}>
-                      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                        <label style={{ fontSize: "14px", fontWeight: 500 }}>显示名称</label>
-                        <Input placeholder="我的电影" value={newName} onChange={(e) => setNewName(e.target.value)} />
+                <Button style={{ display: "flex", alignItems: "center", gap: "8px" }} onClick={() => setIsAddDialogOpen(true)}>
+                  <Plus style={{ width: "16px", height: "16px" }} />
+                  添加目录
+                </Button>
+
+                {isAddDialogOpen && (
+                  <div style={{
+                    position: "fixed",
+                    inset: 0,
+                    zIndex: 50,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    backgroundColor: "rgba(0, 0, 0, 0.5)"
+                  }} onClick={() => setIsAddDialogOpen(false)}>
+                    <div style={{
+                      backgroundColor: "var(--color-card)",
+                      borderRadius: "12px",
+                      padding: "24px",
+                      width: "100%",
+                      maxWidth: "450px",
+                      boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)"
+                    }} onClick={(e) => e.stopPropagation()}>
+                      <h3 style={{ fontSize: "18px", fontWeight: 600, marginBottom: "8px" }}>添加影视目录</h3>
+                      <p style={{ fontSize: "14px", color: "var(--color-muted-foreground)", marginBottom: "16px" }}>添加包含视频文件的目录路径</p>
+
+                      <div style={{ display: "flex", flexDirection: "column", gap: "16px", marginBottom: "24px" }}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                          <label style={{ fontSize: "14px", fontWeight: 500 }}>显示名称</label>
+                          <Input placeholder="我的电影" value={newName} onChange={(e) => setNewName(e.target.value)} />
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                          <label style={{ fontSize: "14px", fontWeight: 500 }}>目录路径</label>
+                          <input
+                            type="text"
+                            placeholder="输入路径如 D:\Movies 或 \\NAS\Movies"
+                            value={newPath}
+                            onChange={(e) => setNewPath(e.target.value)}
+                            style={{
+                              height: "36px",
+                              padding: "0 12px",
+                              borderRadius: "6px",
+                              border: "1px solid var(--color-border)",
+                              backgroundColor: "var(--color-background)",
+                              fontSize: "14px",
+                              color: "var(--color-foreground)",
+                              width: "100%"
+                            }}
+                          />
+                        </div>
                       </div>
-                      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                        <label style={{ fontSize: "14px", fontWeight: 500 }}>目录路径</label>
-                        <Input placeholder="D:\Movies" value={newPath} onChange={(e) => setNewPath(e.target.value)} />
+
+                      <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px" }}>
+                        <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>取消</Button>
+                        <Button onClick={handleAddDirectory}>添加</Button>
                       </div>
                     </div>
-                    <DialogFooter>
-                      <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>取消</Button>
-                      <Button onClick={handleAddDirectory}>添加</Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
+                  </div>
+                )}
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
@@ -631,6 +704,8 @@ export default function Dashboard() {
                     onToggle={() => toggleDirectory(dir.id, !dir.enabled)}
                     onDelete={() => removeDirectory(dir.id)}
                     loading={loading}
+                    scanning={scanningDirectories.has(dir.id)}
+                    scanProgress={scanProgress[dir.id]}
                   />
                 ))}
                 {directories.length === 0 && (

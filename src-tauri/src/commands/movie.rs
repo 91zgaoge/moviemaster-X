@@ -2,10 +2,13 @@ use crate::db::Database;
 use crate::models::Movie;
 use crate::scanner;
 use crate::services;
+use crate::services::scan_manager::{ScanManager, ScanStatus};
+use crate::services::vnfo::{self, VNFOData};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
+use std::sync::Arc;
 use tauri::{Manager, State};
 use walkdir::WalkDir;
 
@@ -46,7 +49,7 @@ pub fn get_movies(
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
     
     let mut sql = String::from(
-        "SELECT id, directory_id, filename, path, cnname, cnoname, year, countries, 
+        "SELECT id, directory_id, NULL as series_id, filename, path, cnname, cnoname, year, countries, 
          douban_id, imdb_id, poster_path, fanart_path, description, douban_rating, 
          imdb_rating, video_type, season, episode, file_size, file_hash, 
          created_at, updated_at 
@@ -83,7 +86,8 @@ pub fn get_movies(
         sql.push_str(&format!(" OFFSET {}", off));
     }
     
-    let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+    let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|p| p.as_ref())
+        .collect();
     
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
     
@@ -117,74 +121,377 @@ pub fn get_movies(
         })
         .map_err(|e| e.to_string())?
         .filter_map(|r| r.ok())
+        
         .collect();
     
     Ok(movies)
 }
 
+/// 启动后台扫描
 #[tauri::command]
-pub async fn scan_directory(db: State<'_, Database>, directory_id: i64) -> Result<i32, String> {
-    log::info!("Starting scan for directory_id: {}", directory_id);
-    
-    let (path, path_type) = {
+pub async fn start_scan(
+    db: State<'_, Database>,
+    scan_manager: State<'_, Arc<ScanManager>>,
+    directory_id: i64,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    eprintln!("[RUST] start_scan function entry");
+    log::info!("Starting background scan for directory_id: {}", directory_id);
+    eprintln!("[RUST] start_scan called with directory_id: {}", directory_id);
+
+    // 获取目录信息
+    let (path, path_type, dir_name) = {
         let conn = db.conn.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn
-            .prepare("SELECT path, path_type FROM directories WHERE id = ?1")
+            .prepare("SELECT path, path_type, name FROM directories WHERE id = ?1")
             .map_err(|e| e.to_string())?;
-        
-        let result: Result<(String, String), _> = stmt.query_row([directory_id], |row| {
-            Ok((row.get(0)?, row.get::<_, String>(1).unwrap_or_else(|_| "local".to_string())))
+
+        let result: Result<(String, String, Option<String>), _> = stmt.query_row([directory_id], |row| {
+            Ok((row.get(0)?, row.get::<_, String>(1).unwrap_or_else(|_| "local".to_string()), row.get(2)?))
         });
-        
+
         match result {
             Ok(r) => r,
             Err(_) => return Err("Directory not found".to_string()),
         }
     };
-    
-    if path_type != "local" {
+
+    // 检测是否为UNC路径 (\\\\server\\share 格式)
+    let is_unc_path = path.starts_with("\\\\") || path.starts_with("//");
+
+    if path_type != "local" && !is_unc_path {
         return Err("SMB scanning not yet implemented".to_string());
     }
-    
-    let path_ref = Path::new(&path);
-    if !path_ref.exists() {
-        return Err("Directory does not exist".to_string());
+
+    // 对非UNC路径检查是否存在，UNC路径跳过检查（网络路径可能延迟或需要认证）
+    if !is_unc_path {
+        let path_ref = Path::new(&path);
+        if !path_ref.exists() {
+            return Err("Directory does not exist".to_string());
+        }
+    } else {
+        // UNC路径：尝试用metadata检查，失败也继续（可能网络暂时不可用）
+        let path_ref = Path::new(&path);
+        if let Err(e) = std::fs::metadata(&path_ref) {
+            log::warn!("UNC path may not be accessible: {} - {}", path, e);
+            // 不阻止添加，因为网络可能在扫描时恢复
+        }
     }
-    
+
+    // 如果已经在扫描，返回错误
+    if scan_manager.is_scanning(directory_id) {
+        return Err("Scan already in progress".to_string());
+    }
+
+    let dir_name = dir_name.unwrap_or_else(|| path.clone());
+    scan_manager.start_scan(directory_id, dir_name.clone());
+
+    // 获取应用数据目录用于重新打开数据库连接
+    let app_dir = app_handle.path().app_data_dir().map_err(|e| e.to_string())?;
+    let db_path = app_dir.join("moviemaster.db");
+
+    // 克隆需要的数据用于后台任务
+    let scan_manager_clone = Arc::clone(&*scan_manager);
+    let path_clone = path.clone();
+    let dir_id_clone = directory_id;
+
+    // 启动后台任务 - 分阶段扫描
+    tauri::async_runtime::spawn(async move {
+        log::info!("Starting background scan for directory {}", dir_id_clone);
+        let start_time = std::time::Instant::now();
+
+        // 在后台任务中重新打开数据库连接
+        let db = match crate::Database::new(&db_path) {
+            Ok(db) => db,
+            Err(e) => {
+                log::error!("Failed to open database in background task: {}", e);
+                scan_manager_clone.error_scan(dir_id_clone, format!("数据库连接失败: {}", e));
+                return;
+            }
+        };
+
+        // ========== 阶段1：快速遍历，只收集文件名和路径 ==========
+        log::info!("Phase 1: Quick file discovery for directory {}", dir_id_clone);
+        
+        let mut quick_files: Vec<(String, String)> = Vec::new(); // (filename, filepath)
+        let mut discovered = 0;
+
+        // 超轻量级遍历 - 只获取文件名，不访问metadata
+        let walker = WalkDir::new(&path_clone)
+            .follow_links(false)
+            .max_depth(3)
+            .into_iter();
+
+        for entry in walker.filter_map(|e| e.ok()) {
+            eprintln!("[RUST] Walker entry: {:?}", entry.path());
+            let entry_path = entry.path();
+            
+            // 跳过目录
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            // 快速检查扩展名（不访问完整metadata）
+            if let Some(ext) = entry_path.extension() {
+                let ext = ext.to_string_lossy().to_lowercase();
+                match ext.as_str() {
+                    "mp4" | "mkv" | "avi" | "mov" | "wmv" | "flv" | "webm" | "m4v" | "mpg" | "mpeg" | "ts" | "iso" => {
+                        if let Some(filename) = entry_path.file_name().and_then(|n| n.to_str()) {
+                            quick_files.push((filename.to_string(), entry_path.to_string_lossy().to_string()));
+                            discovered += 1;
+                            
+                            // 每50个文件更新一次进度
+                            if discovered % 50 == 0 {
+                                scan_manager_clone.update_progress(
+                                    dir_id_clone,
+                                    filename.to_string(),
+                                    discovered,
+                                    0,
+                                );
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            // 如果扫描超过5分钟仍未完成阶段1，记录警告
+            if start_time.elapsed().as_secs() > 300 && discovered % 100 == 0 {
+                log::warn!("Phase 1 is taking long time. Discovered {} files for directory {}", discovered, dir_id_clone);
+            }
+        }
+
+        log::info!("Phase 1 complete: Discovered {} video files in {}s", discovered, start_time.elapsed().as_secs());
+        
+        // 更新进度显示正在处理
+        scan_manager_clone.update_progress(
+            dir_id_clone,
+            "正在整理媒体库...".to_string(),
+            discovered,
+            0,
+        );
+
+        // ========== 阶段2：批量插入数据库（只使用文件名信息） ==========
+        log::info!("Phase 2: Inserting files to database for directory {}", dir_id_clone);
+        
+        let mut count = 0;
+        let mut batch: Vec<(String, String, String, Option<String>, String, Option<String>, Option<String>)> = Vec::new();
+        let batch_size = 50; // 更大的批量插入
+
+        for (filename, filepath) in quick_files {
+            let parsed = services::parse_filename(&filename);
+            
+            batch.push((
+                filename,
+                filepath,
+                parsed.title,
+                parsed.year,
+                parsed.video_type,
+                parsed.season,
+                parsed.episode,
+            ));
+
+            // 批量插入
+            if batch.len() >= batch_size {
+                let conn = match db.conn.lock() {
+                    Ok(c) => c,
+                    Err(e) => {
+                        log::error!("Failed to lock database: {}", e);
+                        batch.clear();
+                        continue;
+                    }
+                };
+
+                
+                for (filename, filepath, title, year, video_type, season, episode) in &batch {
+                    // 使用默认值插入，不获取文件大小
+                    if let Err(e) = conn.execute(
+                        "INSERT OR IGNORE INTO movies
+                         (directory_id, filename, path, cnname, year, video_type, season, episode, file_size, file_hash, created_at, updated_at)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL, NULL, datetime('now'), datetime('now'))",
+                        params![
+                            dir_id_clone,
+                            filename,
+                            filepath,
+                            title,
+                            year,
+                            video_type,
+                            season,
+                            episode,
+                        ],
+                    ) {
+                        log::error!("Failed to insert movie: {}", e);
+                        continue;
+                    }
+
+                    if conn.changes() > 0 {
+                        eprintln!("[RUST] Insert success: {}", filename);
+                        
+                        count += 1;
+                    }
+                }
+                
+                // 每批次更新一次进度
+                scan_manager_clone.update_progress(
+                    dir_id_clone,
+                    format!("已导入 {} 个新影片", count),
+                    discovered,
+                    count,
+                );
+                
+                batch.clear();
+            }
+        }
+
+        // 处理剩余批次
+        if !batch.is_empty() {
+            let conn = match db.conn.lock() {
+                Ok(c) => c,
+                Err(e) => {
+                    log::error!("Failed to lock database: {}", e);
+                    return;
+                }
+            };
+
+                for (filename, filepath, title, year, video_type, season, episode) in &batch {
+                if let Err(e) = conn.execute(
+                    "INSERT OR IGNORE INTO movies
+                     (directory_id, filename, path, cnname, year, video_type, season, episode, file_size, file_hash, created_at, updated_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL, NULL, datetime('now'), datetime('now'))",
+                    params![
+                        dir_id_clone,
+                        filename,
+                        filepath,
+                        title,
+                        year,
+                        video_type,
+                        season,
+                        episode,
+                    ],
+                ) {
+                    log::error!("Failed to insert movie: {}", e);
+                    continue;
+                }
+
+                if conn.changes() > 0 {
+                        eprintln!("[RUST] Insert success: {}", filename);
+                    } else {
+                        eprintln!("[RUST] Insert ignored (duplicate): {}", filename);
+                        
+                    count += 1;
+                }
+            }
+        }
+
+        let elapsed = start_time.elapsed().as_secs();
+        log::info!("Background scan completed for directory {}. Added {} new movies in {}s", dir_id_clone, count, elapsed);
+        scan_manager_clone.complete_scan(dir_id_clone, count);
+        
+        // ========== 阶段3（可选）：后台补充元数据 ==========
+        // 这个阶段可以在扫描完成后异步进行，不影响用户体验
+        // 包括：获取文件大小、检查VNFO、计算hash等
+        if count > 0 {
+            log::info!("Phase 3: Will enrich metadata for {} new movies in background", count);
+            // 可以在这里启动另一个后台任务来补充元数据
+        }
+    });
+
+    Ok(())
+}
+
+/// 获取全局扫描状态
+#[tauri::command]
+pub fn get_global_scan_status(
+    scan_manager: State<'_, Arc<ScanManager>>,
+) -> ScanStatus {
+    scan_manager.get_global_status()
+}
+
+/// 清除扫描状态
+#[tauri::command]
+pub fn clear_scan_status(
+    scan_manager: State<'_, Arc<ScanManager>>,
+    directory_id: i64,
+) {
+    scan_manager.clear_status(directory_id);
+}
+
+/// 旧的同步扫描命令（保留兼容性）
+#[tauri::command]
+pub async fn scan_directory(db: State<'_, Database>, directory_id: i64) -> Result<i32, String> {
+    log::info!("Starting scan for directory_id: {}", directory_id);
+
+    let (path, path_type) = {
+        let conn = db.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare("SELECT path, path_type FROM directories WHERE id = ?1")
+            .map_err(|e| e.to_string())?;
+
+        let result: Result<(String, String), _> = stmt.query_row([directory_id], |row| {
+            Ok((row.get(0)?, row.get::<_, String>(1).unwrap_or_else(|_| "local".to_string())))
+        });
+
+        match result {
+            Ok(r) => r,
+            Err(_) => return Err("Directory not found".to_string()),
+        }
+    };
+
+    // 检测是否为UNC路径 (\\\\server\\share 格式)
+    let is_unc_path = path.starts_with("\\\\") || path.starts_with("//");
+
+    if path_type != "local" && !is_unc_path {
+        return Err("SMB scanning not yet implemented".to_string());
+    }
+
+    // 对非UNC路径检查是否存在
+    if !is_unc_path {
+        let path_ref = Path::new(&path);
+        if !path_ref.exists() {
+            return Err("Directory does not exist".to_string());
+        }
+    } else {
+        // UNC路径：尝试访问，失败也继续
+        let path_ref = Path::new(&path);
+        if let Err(e) = std::fs::metadata(&path_ref) {
+            log::warn!("UNC path may not be accessible: {} - {}", path, e);
+        }
+    }
+
     let mut count = 0;
-    
+
     for entry in WalkDir::new(&path)
         .follow_links(true)
         .into_iter()
         .filter_map(|e| e.ok())
     {
         let entry_path = entry.path();
-        
+
         if entry_path.is_file() && scanner::is_video_file(entry_path) {
             let filename = entry_path
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("")
                 .to_string();
-            
+
             let file_path = entry_path.to_string_lossy().to_string();
             let file_size = entry.metadata().map(|m| m.len() as i64).ok();
-            
+
             let parsed = services::parse_filename(&filename);
-            
+
             // Calculate hash for smaller files (hash calculation is expensive)
             let file_hash = if file_size.unwrap_or(0) < 1024 * 1024 * 1024 { // < 1GB
                 crate::services::hash::calculate_opensubtitles_hash(entry_path).ok()
             } else {
                 None
             };
-            
+
             let conn = db.conn.lock().map_err(|e| e.to_string())?;
-            
+
             // Insert or ignore if already exists
             conn.execute(
-                "INSERT OR IGNORE INTO movies 
-                 (directory_id, filename, path, cnname, year, video_type, season, episode, file_size, file_hash) 
+                "INSERT OR IGNORE INTO movies
+                 (directory_id, filename, path, cnname, year, video_type, season, episode, file_size, file_hash)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
                 params![
                     directory_id,
@@ -199,13 +506,61 @@ pub async fn scan_directory(db: State<'_, Database>, directory_id: i64) -> Resul
                     file_hash,
                 ],
             ).map_err(|e| e.to_string())?;
-            
+
             if conn.changes() > 0 {
+                        eprintln!("[RUST] Insert success: {}", filename);
+                    } else {
+                        eprintln!("[RUST] Insert ignored (duplicate): {}", filename);
+                        
                 count += 1;
+
+                // 检查并读取VNFO文件
+                if vnfo::vnfo_exists(entry_path) {
+                    match vnfo::read_vnfo(entry_path) {
+                        Ok(vnfo_data) => {
+                            // 更新刚插入的影片记录
+                            let update_sql = r#"
+                                UPDATE movies SET
+                                    cnname = COALESCE(NULLIF(cnname, ''), ?1),
+                                    cnoname = COALESCE(NULLIF(cnoname, ''), ?2),
+                                    year = COALESCE(NULLIF(year, ''), ?3),
+                                    description = COALESCE(NULLIF(description, ''), ?4),
+                                    douban_rating = COALESCE(douban_rating, ?5),
+                                    countries = COALESCE(NULLIF(countries, ''), ?6),
+                                    imdb_id = COALESCE(NULLIF(imdb_id, ''), ?7),
+                                    video_type = COALESCE(NULLIF(video_type, ''), ?8),
+                                    updated_at = datetime('now')
+                                WHERE path = ?9
+                            "#;
+
+                            if let Err(e) = conn.execute(
+                                update_sql,
+                                params![
+                                    vnfo_data.title.unwrap_or_default(),
+                                    vnfo_data.original_title.unwrap_or_default(),
+                                    vnfo_data.year.unwrap_or_default(),
+                                    vnfo_data.plot.unwrap_or_default(),
+                                    vnfo_data.rating,
+                                    vnfo_data.countries.join(", "),
+                                    vnfo_data.imdb_id.unwrap_or_default(),
+                                    vnfo_data.video_type.unwrap_or_else(|| parsed.video_type.clone()),
+                                    file_path,
+                                ],
+                            ) {
+                                log::error!("Failed to update movie from VNFO: {}", e);
+                            } else {
+                                log::info!("Updated movie from VNFO: {}", filename);
+                            }
+                        }
+                        Err(e) => {
+                            log::warn!("Failed to read VNFO for {}: {}", filename, e);
+                        }
+                    }
+                }
             }
         }
     }
-    
+
     log::info!("Scan completed. Added {} new movies.", count);
     Ok(count)
 }
@@ -216,7 +571,7 @@ pub fn get_movie_by_id(db: State<Database>, id: i64) -> Result<Option<Movie>, St
     
     let mut stmt = conn
         .prepare(
-            "SELECT id, directory_id, filename, path, cnname, cnoname, year, countries, 
+            "SELECT id, directory_id, NULL as series_id, filename, path, cnname, cnoname, year, countries, 
              douban_id, imdb_id, poster_path, fanart_path, description, douban_rating, 
              imdb_rating, video_type, season, episode, file_size, file_hash, 
              created_at, updated_at 
@@ -273,6 +628,7 @@ pub fn update_movie_info(
     poster_path: Option<String>,
     fanart_path: Option<String>,
 ) -> Result<(), String> {
+    eprintln!("[RUST] start_scan function entry");
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
     
     conn.execute(
@@ -391,7 +747,7 @@ pub async fn fetch_douban_info(db: State<'_, Database>, movie_id: i64) -> Result
     // For now, return the existing movie
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
     let mut stmt = conn.prepare(
-        "SELECT id, directory_id, filename, path, cnname, cnoname, year, countries, 
+        "SELECT id, directory_id, NULL as series_id, filename, path, cnname, cnoname, year, countries, 
          douban_id, imdb_id, poster_path, fanart_path, description, douban_rating, 
          imdb_rating, video_type, season, episode, file_size, file_hash, 
          created_at, updated_at 
@@ -765,22 +1121,34 @@ pub async fn update_movie_from_tmdb(
     movie_id: i64,
     tmdb_detail: TMDBMovieDetail,
 ) -> Result<(), String> {
+    eprintln!("[RUST] start_scan function entry");
     log::info!("Updating movie {} from TMDB data", movie_id);
-    
+
+    // 先获取影片路径和视频类型
+    let (file_path, video_type) = {
+        let conn = db.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn.prepare("SELECT path, video_type FROM movies WHERE id = ?1")
+            .map_err(|e| e.to_string())?;
+
+        stmt.query_row([movie_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        }).map_err(|e| format!("获取影片信息失败: {}", e))?
+    };
+
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
-    
+
     let cnname = tmdb_detail.cn_title.clone().unwrap_or(tmdb_detail.title.clone());
     let rating = tmdb_detail.vote_average.to_string();
     let year = tmdb_detail.year.clone().unwrap_or_default();
     let overview = tmdb_detail.overview.clone().unwrap_or_default();
     let imdb_id = tmdb_detail.imdb_id.clone().unwrap_or_default();
-    
+
     conn.execute(
-        "UPDATE movies SET 
-         cnname = ?1, 
-         cnoname = ?2, 
-         year = ?3, 
-         description = ?4, 
+        "UPDATE movies SET
+         cnname = ?1,
+         cnoname = ?2,
+         year = ?3,
+         description = ?4,
          douban_rating = ?5,
          imdb_id = ?6,
          updated_at = datetime('now')
@@ -795,14 +1163,25 @@ pub async fn update_movie_from_tmdb(
             &movie_id.to_string(),
         ],
     ).map_err(|e| e.to_string())?;
-    
+
     log::info!("Movie {} updated successfully", movie_id);
+
+    // 保存VNFO文件
+    let vnfo_data = vnfo::vnfo_from_tmdb_detail(&tmdb_detail, &video_type);
+    let video_path = Path::new(&file_path);
+    if let Err(e) = vnfo::save_vnfo(video_path, &vnfo_data) {
+        log::warn!("Failed to save VNFO file: {}", e);
+    } else {
+        log::info!("VNFO file saved for movie {}", movie_id);
+    }
+
     Ok(())
 }
 
 /// 使用系统默认播放器打开影片文件
 #[tauri::command]
 pub async fn open_movie_file(path: String) -> Result<(), String> {
+    eprintln!("[RUST] start_scan function entry");
     log::info!("Opening movie file: {}", path);
     
     #[cfg(target_os = "windows")]
@@ -835,6 +1214,7 @@ pub async fn open_movie_file(path: String) -> Result<(), String> {
 /// 删除影片记录
 #[tauri::command]
 pub fn delete_movie(db: State<Database>, movie_id: i64) -> Result<(), String> {
+    eprintln!("[RUST] start_scan function entry");
     log::info!("Deleting movie: {}", movie_id);
 
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
@@ -910,7 +1290,8 @@ pub async fn smart_update_related_movies(
             )
             .map_err(|e| e.to_string())?
             .filter_map(|r| r.ok())
-            .collect();
+            
+        .collect();
 
             for movie in results {
                 related_movies.push(movie);
@@ -939,6 +1320,7 @@ pub async fn smart_update_related_movies(
         )
         .map_err(|e| e.to_string())?
         .filter_map(|r| r.ok())
+        
         .collect();
 
         for (movie_id, filename, season, episode) in candidates {
@@ -1072,7 +1454,8 @@ fn extract_base_name(filename: &str) -> String {
         .replace('-', " ");
 
     // 去除首尾空格并归一化空格
-    let parts: Vec<&str> = result.split_whitespace().collect();
+    let parts: Vec<&str> = result.split_whitespace()
+        .collect();
     result = parts.join(" ");
 
     result.trim().to_lowercase()
@@ -1097,11 +1480,15 @@ fn similarity_score(a: &str, b: &str) -> f64 {
     }
 
     // 简单的词频相似度
-    let a_words: std::collections::HashSet<_> = a_lower.split_whitespace().collect();
-    let b_words: std::collections::HashSet<_> = b_lower.split_whitespace().collect();
+    let a_words: std::collections::HashSet<_> = a_lower.split_whitespace()
+        .collect();
+    let b_words: std::collections::HashSet<_> = b_lower.split_whitespace()
+        .collect();
 
-    let intersection: std::collections::HashSet<_> = a_words.intersection(&b_words).collect();
-    let union: std::collections::HashSet<_> = a_words.union(&b_words).collect();
+    let intersection: std::collections::HashSet<_> = a_words.intersection(&b_words)
+        .collect();
+    let union: std::collections::HashSet<_> = a_words.union(&b_words)
+        .collect();
 
     if union.is_empty() {
         return 0.0;
@@ -1311,4 +1698,74 @@ pub fn get_poster_image(poster_path: String) -> Result<Vec<u8>, String> {
     }
 
     fs::read(path).map_err(|e| format!("Failed to read poster: {}", e))
+}
+
+/// 读取影片的VNFO文件
+#[tauri::command]
+pub fn read_movie_vnfo(movie_path: String) -> Result<VNFOData, String> {
+    let path = Path::new(&movie_path);
+    vnfo::read_vnfo(path)
+}
+
+/// 保存影片VNFO文件
+#[tauri::command]
+pub fn save_movie_vnfo(movie_path: String, data: VNFOData) -> Result<(), String> {
+    eprintln!("[RUST] start_scan function entry");
+    let path = Path::new(&movie_path);
+    vnfo::save_vnfo(path, &data)
+}
+
+/// 检查影片是否有VNFO文件
+#[tauri::command]
+pub fn has_vnfo(movie_path: String) -> bool {
+    let path = Path::new(&movie_path);
+    vnfo::vnfo_exists(path)
+}
+
+/// 获取影片统计信息
+#[tauri::command]
+pub fn get_movie_stats(db: State<Database>) -> Result<MovieStats, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+
+    let total: i64 = conn
+        .query_row("SELECT COUNT(*) FROM movies", [], |row| row.get(0))
+        .map_err(|e| e.to_string())?;
+
+    let movies: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM movies WHERE video_type = 'movie'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+
+    let tv: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM movies WHERE video_type = 'tv'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+
+    Ok(MovieStats {
+        total,
+        movies,
+        tv,
+    })
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MovieStats {
+    pub total: i64,
+    pub movies: i64,
+    pub tv: i64,
+}
+
+/// 获取扫描状态
+#[tauri::command]
+pub fn get_scan_status(
+    scan_manager: State<'_, Arc<ScanManager>>,
+    directory_id: i64,
+) -> ScanStatus {
+    scan_manager.get_status(directory_id)
 }

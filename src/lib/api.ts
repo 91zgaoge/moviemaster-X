@@ -147,6 +147,75 @@ export async function scanDirectory(directoryId: number): Promise<number> {
   return invoke("scan_directory", { directoryId });
 }
 
+// Background Scan API
+export interface ScanProgress {
+  status: "idle" | "scanning" | "completed" | "error";
+  directory_id?: number;
+  directory_name?: string;
+  current_file?: string;
+  processed?: number;
+  found?: number;
+  total_found?: number;
+  message?: string;
+}
+
+export async function startScan(directoryId: number): Promise<void> {
+  console.log("[API] startScan called with directory_id:", directoryId);
+  try {
+    const result = await invoke("start_scan", { directoryId: directoryId });
+    console.log("[API] startScan success:", result);
+    return result;
+  } catch (error) {
+    console.error("[API] startScan failed:", error);
+    throw error;
+  }
+}
+
+export async function getScanStatus(directoryId: number): Promise<ScanProgress> {
+  return invoke("get_scan_status", { directoryId: directoryId });
+}
+
+export async function getGlobalScanStatus(): Promise<ScanProgress> {
+  return invoke("get_global_scan_status");
+}
+
+export async function clearScanStatus(directoryId: number): Promise<void> {
+  return invoke("clear_scan_status", { directoryId: directoryId });
+}
+
+// VNFO API
+export interface VNFOData {
+  title?: string;
+  original_title?: string;
+  year?: string;
+  plot?: string;
+  rating?: number;
+  genres: string[];
+  countries: string[];
+  directors: string[];
+  actors: string[];
+  imdb_id?: string;
+  tmdb_id?: number;
+  poster_url?: string;
+  video_type?: string;
+  season?: string;
+  episode?: string;
+  source: string;
+  updated_at: string;
+}
+
+export async function readMovieVnfo(moviePath: string): Promise<VNFOData> {
+  return invoke("read_movie_vnfo", { moviePath });
+}
+
+export async function saveMovieVnfo(moviePath: string, data: VNFOData): Promise<void> {
+  return invoke("save_movie_vnfo", { moviePath, data });
+}
+
+export async function hasVnfo(moviePath: string): Promise<boolean> {
+  return invoke("has_vnfo", { moviePath });
+}
+
 // Series API
 export async function getSeries(options?: {
   search?: string;
@@ -559,4 +628,15 @@ export async function agentImportKnowledge(knowledgeJson: string): Promise<void>
 
 export async function agentTestLLMConnection(endpoint?: string, apiKey?: string): Promise<boolean> {
   return invoke("agent_test_llm_connection", { endpoint, apiKey });
+}
+
+// Stats API
+export interface MovieStats {
+  total: number;
+  movies: number;
+  tv: number;
+}
+
+export async function getMovieStats(): Promise<MovieStats> {
+  return invoke("get_movie_stats");
 }
