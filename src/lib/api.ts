@@ -14,6 +14,7 @@ export interface Directory {
 export interface Movie {
   id: number;
   directory_id: number;
+  series_id?: number | null;
   filename: string;
   path: string;
   cnname: string | null;
@@ -32,6 +33,24 @@ export interface Movie {
   episode: string | null;
   file_size: number | null;
   file_hash: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Series {
+  id: number;
+  title: string;
+  cnname: string | null;
+  year: string | null;
+  description: string | null;
+  poster_path: string | null;
+  fanart_path: string | null;
+  douban_id: string | null;
+  imdb_id: string | null;
+  douban_rating: number | null;
+  imdb_rating: number | null;
+  total_seasons: number;
+  total_episodes: number;
   created_at: string;
   updated_at: string;
 }
@@ -126,6 +145,28 @@ export async function getMovies(options?: {
 
 export async function scanDirectory(directoryId: number): Promise<number> {
   return invoke("scan_directory", { directoryId });
+}
+
+// Series API
+export async function getSeries(options?: {
+  search?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<Series[]> {
+  return invoke("get_series", options || {});
+}
+
+export async function getSeriesEpisodes(seriesId: number, season?: string): Promise<Movie[]> {
+  return invoke("get_series_episodes", { seriesId, season });
+}
+
+export async function getMoviesUngrouped(options?: {
+  directory_id?: number;
+  search?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<Movie[]> {
+  return invoke("get_movies_ungrouped", options || {});
 }
 
 export async function getMovieById(id: number): Promise<Movie | null> {

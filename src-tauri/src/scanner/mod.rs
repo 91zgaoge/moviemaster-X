@@ -4,6 +4,126 @@ use std::path::Path;
 
 pub struct FilenameParser;
 
+/// Smart series grouping key - extracts base title for grouping episodes
+pub struct SeriesGrouper;
+
+impl SeriesGrouper {
+    /// Extract series grouping key from filename
+    /// This is used to group episodes from the same series together
+    pub fn extract_series_key(filename: &str) -> String {
+        let path = Path::new(filename);
+        let stem = path.file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(filename);
+
+        // Remove episode patterns to get series base name
+        let patterns = [
+            // S01E01 patterns
+            r"[.\s_-]*[Ss]\d{1,2}[Ee]\d{1,2}.*$",
+            r"[.\s_-]*\d{1,2}[Xx]\d{1,2}.*$",
+            // Episode 01 patterns
+            r"[.\s_-]*[Ee]pisode[.\s_-]*\d{1,3}.*$",
+            r"[.\s_-]*[Ee]p[.\s_-]*\d{1,3}.*$",
+            // Season 1 Episode 1 patterns
+            r"[.\s_-]*[Ss]eason[.\s_-]*\d{1,2}[.\s_-]*[Ee]pisode[.\s_-]*\d{1,3}.*$",
+            // Pure numeric patterns like .01. or _01_ at the end
+            r"[.\s_-]+\d{1,3}[.\s_-]+(?=\d{4}p|720p|1080p|2160p|4k|bluray|webrip|hdtv|$)",
+            // Chinese episode patterns
+            r"[第]\d{1,3}[集话].*$",
+            r"[.\s_-]*\d{1,3}[集话].*$",
+        ];
+
+        let mut result = stem.to_string();
+        for pattern in &patterns {
+            if let Ok(re) = Regex::new(pattern) {
+                result = re.replace_all(&result, "").to_string();
+            }
+        }
+
+        // Clean up common separators and suffixes
+        let clean_patterns = [
+            r"[\[\(\{].*?[\]\)\}]",  // Remove brackets and their content
+            r"[-_.]+$",               // Remove trailing separators
+        ];
+
+        for pattern in &clean_patterns {
+            if let Ok(re) = Regex::new(pattern) {
+                result = re.replace_all(&result, "").to_string();
+            }
+        }
+
+        // Normalize: lowercase, remove dots and underscores, trim
+        result.to_lowercase()
+            .replace('.', " ")
+            .replace('_', " ")
+            .replace('-', " ")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .trim()
+            .to_string()
+    }
+
+    /// Check if two filenames likely belong to the same series
+    pub fn same_series(filename1: &str, filename2: &str) -> bool {
+        let key1 = Self::extract_series_key(filename1);
+        let key2 = Self::extract_series_key(filename2);
+
+        // Exact match
+        if key1 == key2 {
+            return true;
+        }
+
+        // Check if one is a substring of the other (for truncated names)
+        if key1.len() > 5 && key2.len() > 5 {
+            if key1.contains(&key2) || key2.contains(&key1) {
+                return true;
+            }
+        }
+
+        // Check similarity for minor differences
+        let similarity = Self::calculate_similarity(&key1, &key2);
+        similarity > 0.85
+    }
+
+    /// Calculate string similarity using Levenshtein distance
+    fn calculate_similarity(s1: &str, s2: &str) -> f64 {
+        let max_len = s1.len().max(s2.len());
+        if max_len == 0 {
+            return 1.0;
+        }
+
+        let distance = Self::levenshtein_distance(s1, s2);
+        1.0 - (distance as f64 / max_len as f64)
+    }
+
+    fn levenshtein_distance(s1: &str, s2: &str) -> usize {
+        let len1 = s1.chars().count();
+        let len2 = s2.chars().count();
+        let mut matrix = vec![vec![0; len2 + 1]; len1 + 1];
+
+        for i in 0..=len1 {
+            matrix[i][0] = i;
+        }
+        for j in 0..=len2 {
+            matrix[0][j] = j;
+        }
+
+        for (i, c1) in s1.chars().enumerate() {
+            for (j, c2) in s2.chars().enumerate() {
+                let cost = if c1 == c2 { 0 } else { 1 };
+                matrix[i + 1][j + 1] = [
+                    matrix[i][j + 1] + 1,      // deletion
+                    matrix[i + 1][j] + 1,      // insertion
+                    matrix[i][j] + cost,       // substitution
+                ].into_iter().min().unwrap();
+            }
+        }
+
+        matrix[len1][len2]
+    }
+}
+
 impl FilenameParser {
     pub fn parse(filename: &str) -> ParsedFilename {
         let path = Path::new(filename);

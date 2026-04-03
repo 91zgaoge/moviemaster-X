@@ -1,8 +1,11 @@
 import { create } from "zustand"
 import * as api from "@/lib/api"
+import { groupMoviesBySeries, removeDuplicateMovies, type GroupedSeries } from "@/lib/grouping"
 
 interface MovieState {
   movies: api.Movie[]
+  groupedSeries: GroupedSeries[]
+  individualMovies: api.Movie[]
   loading: boolean
   error: string | null
   selectedDirectory: number | null
@@ -10,12 +13,15 @@ interface MovieState {
   videoType: string | null
   tmdbSearchResults: api.TMDBSearchResult[]
   tmdbLoading: boolean
-  
+  groupBySeries: boolean
+
   fetchMovies: () => Promise<void>
   scanDirectory: (directoryId: number) => Promise<number>
   setSelectedDirectory: (id: number | null) => void
   setSearchQuery: (query: string) => void
   setVideoType: (type: string | null) => void
+  setGroupBySeries: (group: boolean) => void
+  refreshGrouping: () => void
   // TMDB actions
   searchTMDB: (title: string, year?: number, videoType?: string) => Promise<api.TMDBSearchResult[]>
   fetchTMDBDetail: (tmdbId: number, videoType: string) => Promise<api.TMDBMovieDetail>
@@ -26,6 +32,8 @@ interface MovieState {
 
 export const useMovieStore = create<MovieState>((set, get) => ({
   movies: [],
+  groupedSeries: [],
+  individualMovies: [],
   loading: false,
   error: null,
   selectedDirectory: null,
@@ -33,17 +41,22 @@ export const useMovieStore = create<MovieState>((set, get) => ({
   videoType: null,
   tmdbSearchResults: [],
   tmdbLoading: false,
-  
+  groupBySeries: true,
+
   fetchMovies: async () => {
     set({ loading: true, error: null })
     try {
       const { selectedDirectory, searchQuery, videoType } = get()
-      const movies = await api.getMovies({
+      let movies = await api.getMovies({
         directory_id: selectedDirectory || undefined,
         video_type: videoType || undefined,
         search: searchQuery || undefined,
       })
-      set({ movies, loading: false })
+      // Remove duplicates by path and hash
+      movies = removeDuplicateMovies(movies)
+      // Group TV series
+      const { series, individualMovies } = groupMoviesBySeries(movies)
+      set({ movies, groupedSeries: series, individualMovies, loading: false })
     } catch (error) {
       set({ error: String(error), loading: false })
     }
@@ -76,6 +89,18 @@ export const useMovieStore = create<MovieState>((set, get) => ({
     set({ videoType: type })
     get().fetchMovies()
   },
+
+  setGroupBySeries: (group) => {
+    set({ groupBySeries: group })
+  },
+
+  refreshGrouping: () => {
+    const { movies } = get()
+    const uniqueMovies = removeDuplicateMovies(movies)
+    const { series, individualMovies } = groupMoviesBySeries(uniqueMovies)
+    set({ movies: uniqueMovies, groupedSeries: series, individualMovies })
+  },
+
   // TMDB actions
   searchTMDB: async (title, year, videoType = "movie") => {
     set({ tmdbLoading: true })
