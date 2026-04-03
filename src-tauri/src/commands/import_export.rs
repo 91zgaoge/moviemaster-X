@@ -16,7 +16,7 @@ pub fn export_movies_json(
     let movies = {
         let conn = db.conn.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn.prepare(
-            "SELECT id, directory_id, filename, path, cnname, cnoname, year, countries, 
+            "SELECT id, directory_id, series_id, filename, path, cnname, cnoname, year, countries, 
              douban_id, imdb_id, poster_path, fanart_path, description, douban_rating, 
              imdb_rating, video_type, season, episode, file_size, file_hash, created_at, updated_at 
              FROM movies"
@@ -26,26 +26,27 @@ pub fn export_movies_json(
             Ok(crate::models::Movie {
                 id: row.get(0)?,
                 directory_id: row.get(1)?,
-                filename: row.get(2)?,
-                path: row.get(3)?,
-                cnname: row.get(4)?,
-                cnoname: row.get(5)?,
-                year: row.get(6)?,
-                countries: row.get(7)?,
-                douban_id: row.get(8)?,
-                imdb_id: row.get(9)?,
-                poster_path: row.get(10)?,
-                fanart_path: row.get(11)?,
-                description: row.get(12)?,
-                douban_rating: row.get(13)?,
-                imdb_rating: row.get(14)?,
-                video_type: row.get(15)?,
-                season: row.get(16)?,
-                episode: row.get(17)?,
-                file_size: row.get(18)?,
-                file_hash: row.get(19)?,
-                created_at: row.get(20)?,
-                updated_at: row.get(21)?,
+                series_id: row.get(2)?,
+                filename: row.get(3)?,
+                path: row.get(4)?,
+                cnname: row.get(5)?,
+                cnoname: row.get(6)?,
+                year: row.get(7)?,
+                countries: row.get(8)?,
+                douban_id: row.get(9)?,
+                imdb_id: row.get(10)?,
+                poster_path: row.get(11)?,
+                fanart_path: row.get(12)?,
+                description: row.get(13)?,
+                douban_rating: row.get(14)?,
+                imdb_rating: row.get(15)?,
+                video_type: row.get(16)?,
+                season: row.get(17)?,
+                episode: row.get(18)?,
+                file_size: row.get(19)?,
+                file_hash: row.get(20)?,
+                created_at: row.get(21)?,
+                updated_at: row.get(22)?,
             })
         }).map_err(|e| e.to_string())?
         .filter_map(|r| r.ok())
@@ -72,7 +73,7 @@ pub fn export_movies_csv(
     let movies = {
         let conn = db.conn.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn.prepare(
-            "SELECT id, directory_id, filename, path, cnname, cnoname, year, countries, 
+            "SELECT id, directory_id, series_id, filename, path, cnname, cnoname, year, countries, 
              douban_id, imdb_id, poster_path, fanart_path, description, douban_rating, 
              imdb_rating, video_type, season, episode, file_size, file_hash, created_at, updated_at 
              FROM movies"
@@ -82,26 +83,27 @@ pub fn export_movies_csv(
             Ok(crate::models::Movie {
                 id: row.get(0)?,
                 directory_id: row.get(1)?,
-                filename: row.get(2)?,
-                path: row.get(3)?,
-                cnname: row.get(4)?,
-                cnoname: row.get(5)?,
-                year: row.get(6)?,
-                countries: row.get(7)?,
-                douban_id: row.get(8)?,
-                imdb_id: row.get(9)?,
-                poster_path: row.get(10)?,
-                fanart_path: row.get(11)?,
-                description: row.get(12)?,
-                douban_rating: row.get(13)?,
-                imdb_rating: row.get(14)?,
-                video_type: row.get(15)?,
-                season: row.get(16)?,
-                episode: row.get(17)?,
-                file_size: row.get(18)?,
-                file_hash: row.get(19)?,
-                created_at: row.get(20)?,
-                updated_at: row.get(21)?,
+                series_id: row.get(2)?,
+                filename: row.get(3)?,
+                path: row.get(4)?,
+                cnname: row.get(5)?,
+                cnoname: row.get(6)?,
+                year: row.get(7)?,
+                countries: row.get(8)?,
+                douban_id: row.get(9)?,
+                imdb_id: row.get(10)?,
+                poster_path: row.get(11)?,
+                fanart_path: row.get(12)?,
+                description: row.get(13)?,
+                douban_rating: row.get(14)?,
+                imdb_rating: row.get(15)?,
+                video_type: row.get(16)?,
+                season: row.get(17)?,
+                episode: row.get(18)?,
+                file_size: row.get(19)?,
+                file_hash: row.get(20)?,
+                created_at: row.get(21)?,
+                updated_at: row.get(22)?,
             })
         }).map_err(|e| e.to_string())?
         .filter_map(|r| r.ok())

@@ -82,6 +82,12 @@ export function MovieCard({
             src={convertFileSrc(movie.poster_path.replace(/\\/g, '/'))}
             alt={movie.cnname || movie.filename}
             style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            onError={() => {
+              console.error('Poster load error:', movie.poster_path);
+              if (movie.poster_path) {
+                console.error('Converted URL:', convertFileSrc(movie.poster_path.replace(/\\/g, '/')));
+              }
+            }}
           />
         ) : (
           <div style={{ 

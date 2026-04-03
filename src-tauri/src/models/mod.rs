@@ -15,6 +15,7 @@ pub struct Directory {
 pub struct Movie {
     pub id: i64,
     pub directory_id: i64,
+    pub series_id: Option<i64>,
     pub filename: String,
     pub path: String,
     pub cnname: Option<String>,
