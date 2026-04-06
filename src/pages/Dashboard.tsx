@@ -34,6 +34,7 @@ import {
 import { useDirectoryStore } from "@/stores/directoryStore"
 import { useMovieStore } from "@/stores/movieStore"
 import { MovieDetailDialog } from "@/components/MovieDetailDialog"
+import { SeriesDetailDialog } from "@/components/SeriesDetailDialog"
 import { DuplicateManager } from "@/components/DuplicateManager"
 import { PTDepilerSettings } from "@/components/PTDepilerSettings"
 import { QBittorrentSettings } from "@/components/QBittorrentSettings"
@@ -41,8 +42,10 @@ import { AIAssistant, AIAssistantButton } from "@/components/AIAssistant"
 import { ThemeSwitcher } from "@/components/ThemeSwitcher"
 import { LLMSettings } from "@/components/LLMSettings"
 import type { Movie } from "@/lib/api"
+import type { GroupedSeries } from "@/lib/grouping"
 import {
   MovieCard,
+  SeriesCard,
   DirectoryCard,
   SettingItem,
   EmptyState,
@@ -56,6 +59,8 @@ export default function Dashboard() {
   const { directories, fetchDirectories, addDirectory, removeDirectory, toggleDirectory } = useDirectoryStore()
   const {
     movies,
+    groupedSeries,
+    individualMovies,
     fetchMovies,
     startBackgroundScan,
     scanningDirectories,
@@ -78,6 +83,8 @@ export default function Dashboard() {
   const [videoFilter, setVideoFilter] = useState<"all" | "movie" | "tv">("all")
   const [selectedMovie, setSelectedMovie] = useState<Movie | null>(null)
   const [isDetailOpen, setIsDetailOpen] = useState(false)
+  const [selectedSeries, setSelectedSeries] = useState<GroupedSeries | null>(null)
+  const [isSeriesDetailOpen, setIsSeriesDetailOpen] = useState(false)
   const [selectedMovies, setSelectedMovies] = useState<Set<number>>(new Set())
   const [isBatchMode, setIsBatchMode] = useState(false)
   const [sortBy, setSortBy] = useState<"default" | "name" | "year" | "rating" | "created" | "updated" | "size">("updated")
@@ -155,18 +162,19 @@ export default function Dashboard() {
       showToast("扫描已启动，将在后台进行", "info")
     } catch (error) {
       console.error("[Dashboard] Scan failed:", error)
-      console.error("[Dashboard] Error details:", error?.message, error?.stack)
+      const err = error as Error
+      console.error("[Dashboard] Error details:", err?.message, err?.stack)
       showToast("扫描启动失败: " + error, "error")
     }
   }
 
-  // Auto-refresh movies every 2 seconds when on movies tab
+  // Auto-refresh movies every 30 seconds when on movies tab (reduced from 2s for performance)
   useEffect(() => {
     if (activeTab !== "movies") return
 
     const interval = setInterval(() => {
       fetchMovies()
-    }, 2000)
+    }, 30000) // 30 seconds
 
     return () => clearInterval(interval)
   }, [activeTab, fetchMovies])
@@ -176,38 +184,54 @@ export default function Dashboard() {
     setVideoType(type === "all" ? null : type)
   }
 
-  const filteredMovies = movies
-    .filter((movie) => {
-      if (videoFilter !== "all" && movie.video_type !== videoFilter) return false
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase()
+  // 合并 individualMovies 和 groupedSeries 为统一显示列表
+  const displayItems = [
+    // 电影单独显示
+    ...individualMovies.map(movie => ({ type: 'movie' as const, data: movie })),
+    // 剧集以系列形式显示
+    ...groupedSeries.map(series => ({ type: 'series' as const, data: series })),
+  ]
+
+  const filteredItems = displayItems.filter((item) => {
+    if (videoFilter !== "all") {
+      if (videoFilter === "movie" && item.type !== "movie") return false
+      if (videoFilter === "tv" && item.type !== "series") return false
+    }
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase()
+      if (item.type === "movie") {
+        const movie = item.data
         return (
           movie.filename?.toLowerCase().includes(query) ||
           movie.cnname?.toLowerCase().includes(query)
         )
+      } else {
+        const series = item.data
+        return series.title?.toLowerCase().includes(query)
       }
-      return true
-    })
-    .sort((a, b) => {
-      switch (sortBy) {
-        case "name":
-          return (a.cnname || a.filename).localeCompare(b.cnname || b.filename)
-        case "year":
-          return (parseInt(b.year || "0") || 0) - (parseInt(a.year || "0") || 0)
-        case "rating":
-          return (b.douban_rating || 0) - (a.douban_rating || 0)
-        case "created":
-          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        case "updated":
-          return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
-        case "size":
-          return (b.file_size || 0) - (a.file_size || 0)
-        default:
-          return 0
-      }
-    })
+    }
+    return true
+  })
 
-  // 统计信息已从上面移动到此处
+  const sortedItems = filteredItems.sort((a, b) => {
+    const nameA = a.type === "movie" ? (a.data.cnname || a.data.filename) : a.data.title
+    const nameB = b.type === "movie" ? (b.data.cnname || b.data.filename) : b.data.title
+    
+    switch (sortBy) {
+      case "name":
+        return nameA.localeCompare(nameB)
+      case "year":
+        const yearA = a.type === "movie" ? parseInt(a.data.year || "0") : parseInt(a.data.year || "0")
+        const yearB = b.type === "movie" ? parseInt(b.data.year || "0") : parseInt(b.data.year || "0")
+        return yearB - yearA
+      case "created":
+        const dateA = a.type === "movie" ? new Date(a.data.created_at).getTime() : 0
+        const dateB = b.type === "movie" ? new Date(b.data.created_at).getTime() : 0
+        return dateB - dateA
+      default:
+        return 0
+    }
+  })
 
   return (
     <div style={{ display: "flex", height: "100vh", backgroundColor: "var(--color-background)" }}>
@@ -471,10 +495,14 @@ export default function Dashboard() {
                   <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                     <input
                       type="checkbox"
-                      checked={selectedMovies.size === filteredMovies.length && filteredMovies.length > 0}
+                      checked={selectedMovies.size > 0 && selectedMovies.size === sortedItems.filter(i => i.type === 'movie').length}
                       onChange={(e) => {
                         if (e.target.checked) {
-                          setSelectedMovies(new Set(filteredMovies.map(m => m.id)))
+                          // Only select movies, not series
+                          const movieIds = sortedItems
+                            .filter(i => i.type === 'movie')
+                            .map(i => (i.data as Movie).id)
+                          setSelectedMovies(new Set(movieIds))
                         } else {
                           setSelectedMovies(new Set())
                         }
@@ -539,7 +567,7 @@ export default function Dashboard() {
                 </div>
               )}
 
-              {!isBatchMode && filteredMovies.length > 0 && (
+              {!isBatchMode && sortedItems.length > 0 && (
                 <div style={{ marginBottom: "16px" }}>
                   <Button variant="outline" size="sm" onClick={() => setIsBatchMode(true)}>
                     进入批量模式
@@ -547,69 +575,81 @@ export default function Dashboard() {
                 </div>
               )}
 
-              {filteredMovies.length > 0 ? (
-                <div style={{ 
-                  display: "grid", 
+              {sortedItems.length > 0 ? (
+                <div style={{
+                  display: "grid",
                   gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
                   gap: "20px"
                 }}>
-                  {filteredMovies.map((movie) => (
-                    <MovieCard 
-                      key={movie.id} 
-                      movie={movie}
-                      isSelected={selectedMovies.has(movie.id)}
-                      isBatchMode={isBatchMode}
-                      onToggleSelect={() => {
-                        const newSet = new Set(selectedMovies)
-                        if (newSet.has(movie.id)) {
-                          newSet.delete(movie.id)
-                        } else {
-                          newSet.add(movie.id)
-                        }
-                        setSelectedMovies(newSet)
-                      }}
-                      onClick={() => {
-                        setSelectedMovie(movie)
-                        setIsDetailOpen(true)
-                      }}
-                      onSearchTMDB={async () => {
-                        try {
-                          const title = movie.cnname || movie.filename
-                          const year = movie.year ? parseInt(movie.year) : undefined
-                          const results = await searchTMDB(title, year, movie.video_type)
-
-                          if (results.length > 0) {
-                            const bestMatch = results[0]
-                            const detail = await fetchTMDBDetail(bestMatch.id, movie.video_type)
-                            await updateMovieFromTMDB(movie.id, detail)
-
-                            if (detail.poster_url) {
-                              await downloadTMDBPoster(movie.id, detail.poster_url)
-                            }
-
-                            // 智能更新相关影片
-                            let updatedCount = 0
-                            if (smartUpdateEnabled) {
-                              try {
-                                const relatedResults = await smartUpdateRelatedMovies(movie.id, detail)
-                                updatedCount = relatedResults.length
-                              } catch (e) {
-                                console.error("Smart update failed:", e)
-                              }
-                            }
-
-                            const message = updatedCount > 0
-                              ? `已更新: ${detail.cn_title || detail.title} (连带更新 ${updatedCount} 个相关影片)`
-                              : `已更新: ${detail.cn_title || detail.title}`
-                            showToast(message, "success")
+                  {sortedItems.map((item) => (
+                    item.type === 'movie' ? (
+                      <MovieCard
+                        key={item.data.id}
+                        movie={item.data}
+                        isSelected={selectedMovies.has(item.data.id)}
+                        isBatchMode={isBatchMode}
+                        onToggleSelect={() => {
+                          const newSet = new Set(selectedMovies)
+                          if (newSet.has(item.data.id)) {
+                            newSet.delete(item.data.id)
                           } else {
-                            showToast("未找到匹配的影片", "error")
+                            newSet.add(item.data.id)
                           }
-                        } catch (error) {
-                          showToast("获取 TMDB 信息失败", "error")
-                        }
-                      }}
-                    />
+                          setSelectedMovies(newSet)
+                        }}
+                        onClick={() => {
+                          setSelectedMovie(item.data)
+                          setIsDetailOpen(true)
+                        }}
+                        onSearchTMDB={async () => {
+                          try {
+                            const movie = item.data
+                            const title = movie.cnname || movie.filename
+                            const year = movie.year ? parseInt(movie.year) : undefined
+                            const results = await searchTMDB(title, year, movie.video_type)
+
+                            if (results.length > 0) {
+                              const bestMatch = results[0]
+                              const detail = await fetchTMDBDetail(bestMatch.id, movie.video_type)
+                              await updateMovieFromTMDB(movie.id, detail)
+
+                              if (detail.poster_url) {
+                                await downloadTMDBPoster(movie.id, detail.poster_url)
+                              }
+
+                              // 智能更新相关影片
+                              let updatedCount = 0
+                              if (smartUpdateEnabled) {
+                                try {
+                                  const relatedResults = await smartUpdateRelatedMovies(movie.id, detail)
+                                  updatedCount = relatedResults.length
+                                } catch (e) {
+                                  console.error("Smart update failed:", e)
+                                }
+                              }
+
+                              const message = updatedCount > 0
+                                ? `已更新: ${detail.cn_title || detail.title} (连带更新 ${updatedCount} 个相关影片)`
+                                : `已更新: ${detail.cn_title || detail.title}`
+                              showToast(message, "success")
+                            } else {
+                              showToast("未找到匹配的影片", "error")
+                            }
+                          } catch (error) {
+                            showToast("获取 TMDB 信息失败", "error")
+                          }
+                        }}
+                      />
+                    ) : (
+                      <SeriesCard
+                        key={item.data.key}
+                        series={item.data}
+                        onClick={() => {
+                          setSelectedSeries(item.data)
+                          setIsSeriesDetailOpen(true)
+                        }}
+                      />
+                    )
                   ))}
                 </div>
               ) : (
@@ -1054,6 +1094,39 @@ export default function Dashboard() {
               setIsDetailOpen(false)
             } catch (error) {
               alert("删除失败: " + error)
+            }
+          }
+        }}
+      />
+
+      {/* 剧集详情对话框 */}
+      <SeriesDetailDialog
+        series={selectedSeries}
+        isOpen={isSeriesDetailOpen}
+        onClose={() => setIsSeriesDetailOpen(false)}
+        onUpdateMovie={async (movieId) => {
+          // Find the movie and update it from TMDB
+          const movie = movies.find(m => m.id === movieId)
+          if (movie) {
+            try {
+              const title = movie.cnname || movie.filename
+              const year = movie.year ? parseInt(movie.year) : undefined
+              const results = await searchTMDB(title, year, movie.video_type)
+
+              if (results.length > 0) {
+                const detail = await fetchTMDBDetail(results[0].id, movie.video_type)
+                await updateMovieFromTMDB(movie.id, detail)
+
+                if (detail.poster_url) {
+                  await downloadTMDBPoster(movie.id, detail.poster_url)
+                }
+
+                // Refresh movies
+                await fetchMovies()
+                showToast(`已更新: ${detail.cn_title || detail.title}`, "success")
+              }
+            } catch (error) {
+              showToast("更新失败", "error")
             }
           }
         }}

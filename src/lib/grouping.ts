@@ -19,11 +19,22 @@ export function groupMoviesBySeries(movies: Movie[]): GroupedMoviesResult {
   const seriesMap = new Map<string, GroupedSeries>();
   const individualMovies: Movie[] = [];
 
+  // Pre-compile regex for better performance
+  const seasonRegex = /season \d+|s\d+|第[一二三四五六七八九十\d]+季/gi;
+  const separators = /[._-]/g;
+
   for (const movie of movies) {
     // Skip if no video type info
     if (movie.video_type === 'tv' || (movie.season && movie.episode)) {
-      // Extract base title for grouping
-      const baseTitle = extractSeriesKey(movie.cnname || movie.filename);
+      // Extract base title for grouping - optimized
+      const title = movie.cnname || movie.filename;
+      const baseTitle = title
+        .toLowerCase()
+        .replace(separators, ' ')
+        .replace(/\s+/g, ' ')
+        .replace(seasonRegex, '')
+        .trim();
+
       const key = `${baseTitle}_${movie.year || 'unknown'}`;
 
       if (!seriesMap.has(key)) {
@@ -55,8 +66,9 @@ export function groupMoviesBySeries(movies: Movie[]): GroupedMoviesResult {
   // Sort episodes within each series
   for (const series of seriesMap.values()) {
     series.episodes.sort((a, b) => {
-      const seasonDiff = parseInt(a.season || '0') - parseInt(b.season || '0');
-      if (seasonDiff !== 0) return seasonDiff;
+      const seasonA = parseInt(a.season || '0');
+      const seasonB = parseInt(b.season || '0');
+      if (seasonA !== seasonB) return seasonA - seasonB;
       return parseInt(a.episode || '0') - parseInt(b.episode || '0');
     });
   }
@@ -65,15 +77,6 @@ export function groupMoviesBySeries(movies: Movie[]): GroupedMoviesResult {
     series: Array.from(seriesMap.values()),
     individualMovies,
   };
-}
-
-function extractSeriesKey(title: string): string {
-  return title
-    .toLowerCase()
-    .replace(/[._-]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .replace(/season \d+|s\d+|第[一二三四五六七八九十\d]+季/gi, '')
-    .trim();
 }
 
 function extractSeriesTitle(filename: string): string {
@@ -92,26 +95,22 @@ export function removeDuplicateMovies(movies: Movie[]): Movie[] {
   const seenMovies = new Set<string>();
   const uniqueMovies: Movie[] = [];
 
-  for (const movie of movies) {
-    // Create unique key based on movie identity
-    // Movies: cnname + year
-    // TV Episodes: cnname + year + season + episode
+  for (let i = 0; i < movies.length; i++) {
+    const movie = movies[i];
+
+    // Create unique key based on movie identity - optimized
     const title = movie.cnname || movie.filename;
     const year = movie.year || 'unknown';
     const season = movie.season || '';
     const episode = movie.episode || '';
 
-    // For TV episodes, include season/episode in key
-    // For movies, just use title + year
+    // Build key more efficiently
     let key: string;
     if (movie.video_type === 'tv' || (season && episode)) {
-      key = `${title}_${year}_S${season}E${episode}`;
+      key = `${title}_${year}_S${season}E${episode}`.toLowerCase().trim();
     } else {
-      key = `${title}_${year}`;
+      key = `${title}_${year}`.toLowerCase().trim();
     }
-
-    // Normalize key for comparison
-    key = key.toLowerCase().trim();
 
     // Skip if this movie/show already seen
     if (seenMovies.has(key)) {

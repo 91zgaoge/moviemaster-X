@@ -1,4 +1,5 @@
 export { MovieCard } from "./MovieCard"
+export { SeriesCard } from "./SeriesCard"
 export { DirectoryCard } from "./DirectoryCard"
 export { SettingItem } from "./SettingItem"
 export { EmptyState } from "./EmptyState"

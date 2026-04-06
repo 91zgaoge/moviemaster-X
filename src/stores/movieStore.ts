@@ -14,12 +14,15 @@ interface MovieState {
   tmdbSearchResults: api.TMDBSearchResult[]
   tmdbLoading: boolean
   groupBySeries: boolean
+  // Cache for performance
+  lastFetchTime: number
+  isFetching: boolean
   // Scan status
   scanningDirectories: Set<number>
   scanProgress: Record<number, api.ScanProgress>
   lastScanResults: Record<number, { totalFound: number; timestamp: number }>
 
-  fetchMovies: () => Promise<void>
+  fetchMovies: (force?: boolean) => Promise<void>
   scanDirectory: (directoryId: number) => Promise<number>
   startBackgroundScan: (directoryId: number) => Promise<void>
   fetchScanStatus: (directoryId: number) => Promise<void>
@@ -49,30 +52,68 @@ export const useMovieStore = create<MovieState>((set, get) => ({
   tmdbSearchResults: [],
   tmdbLoading: false,
   groupBySeries: true,
+  lastFetchTime: 0,
+  isFetching: false,
   scanningDirectories: new Set(),
   scanProgress: {},
   lastScanResults: {},
 
-  fetchMovies: async () => {
-    set({ loading: true, error: null })
+  fetchMovies: async (force = false) => {
+    const { isFetching, lastFetchTime, selectedDirectory, searchQuery, videoType } = get()
+
+    // Prevent concurrent fetches
+    if (isFetching) {
+      console.log("[MovieStore] Fetch already in progress, skipping")
+      return
+    }
+
+    // Cache for 5 seconds unless force refresh
+    const now = Date.now()
+    if (!force && now - lastFetchTime < 5000) {
+      console.log("[MovieStore] Using cached data")
+      return
+    }
+
+    set({ isFetching: true, loading: true, error: null })
+
     try {
-      const { selectedDirectory, searchQuery, videoType } = get()
+      console.log("[MovieStore] Fetching movies...")
+      const startTime = performance.now()
+
       let movies = await api.getMovies({
         directory_id: selectedDirectory || undefined,
         video_type: videoType || undefined,
         search: searchQuery || undefined,
       })
-      // Remove duplicates by path and hash
-      console.log("[MovieStore] Fetched movies count:", movies.length);
-      console.log("[MovieStore] Before dedupe:", movies.length);
+
+      const fetchTime = performance.now() - startTime
+      console.log(`[MovieStore] Fetched ${movies.length} movies in ${fetchTime.toFixed(0)}ms`)
+
+      // Process in chunks to avoid blocking UI
+      const processStart = performance.now()
+
       // Remove duplicates by movie identity
       movies = removeDuplicateMovies(movies)
-      console.log("[MovieStore] After dedupe:", movies.length);
+      console.log(`[MovieStore] After dedupe: ${movies.length} movies`)
+
       // Group TV series
       const { series, individualMovies } = groupMoviesBySeries(movies)
-      set({ movies, groupedSeries: series, individualMovies, loading: false })
+      console.log(`[MovieStore] Grouped: ${series.length} series, ${individualMovies.length} movies`)
+
+      const processTime = performance.now() - processStart
+      console.log(`[MovieStore] Processing took ${processTime.toFixed(0)}ms`)
+
+      set({
+        movies,
+        groupedSeries: series,
+        individualMovies,
+        loading: false,
+        isFetching: false,
+        lastFetchTime: Date.now()
+      })
     } catch (error) {
-      set({ error: String(error), loading: false })
+      console.error("[MovieStore] Fetch failed:", error)
+      set({ error: String(error), loading: false, isFetching: false })
     }
   },
 

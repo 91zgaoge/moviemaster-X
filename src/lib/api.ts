@@ -162,9 +162,8 @@ export interface ScanProgress {
 export async function startScan(directoryId: number): Promise<void> {
   console.log("[API] startScan called with directory_id:", directoryId);
   try {
-    const result = await invoke("start_scan", { directoryId: directoryId });
-    console.log("[API] startScan success:", result);
-    return result;
+    await invoke("start_scan", { directoryId: directoryId });
+    console.log("[API] startScan success");
   } catch (error) {
     console.error("[API] startScan failed:", error);
     throw error;
